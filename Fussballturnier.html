@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Turnier Teamauslosung</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #f5f5f3; color: #1a1a1a; min-height: 100vh; padding-bottom: 70px; }
+    .screen { display: none; padding: 1.5rem; max-width: 620px; margin: 0 auto; }
+    .screen.active { display: block; }
+    h1 { font-size: 22px; font-weight: 500; margin-bottom: 1.5rem; }
+    h2 { font-size: 18px; font-weight: 500; margin-bottom: 0.5rem; }
+    .section-title { font-size: 12px; color: #888; font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; }
+    .card { background: #fff; border: 0.5px solid #e0e0d8; border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 12px; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 10px 18px; border-radius: 8px; border: 0.5px solid #ccc; background: #fff; color: #1a1a1a; cursor: pointer; font-size: 14px; font-weight: 500; transition: background 0.15s; }
+    .btn:hover { background: #f0f0ee; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary { background: #1D9E75; color: #fff; border-color: #1D9E75; }
+    .btn-primary:hover { background: #0F6E56; }
+    .btn-danger { color: #c0392b; border-color: #f5c6c6; }
+    input[type=number], input[type=text] { width: 100%; padding: 9px 12px; border: 0.5px solid #ccc; border-radius: 8px; font-size: 14px; background: #fff; color: #1a1a1a; margin-top: 4px; }
+    .star { font-size: 38px; cursor: pointer; filter: grayscale(1) opacity(0.4); transition: filter 0.1s, transform 0.1s; display: inline-block; }
+    .star.on { filter: grayscale(0) opacity(1); }
+    .star:hover { transform: scale(1.15); }
+    .progress-bar { height: 6px; border-radius: 3px; background: #e8e8e4; margin: 8px 0; overflow: hidden; }
+    .progress-fill { height: 100%; border-radius: 3px; background: #1D9E75; transition: width 0.5s ease; }
+    .check-circle { width: 52px; height: 52px; border-radius: 50%; background: #E1F5EE; display: flex; align-items: center; justify-content: center; font-size: 24px; margin: 0 auto 12px; }
+    .team-name-input { font-size: 16px; font-weight: 500; border: 1px solid transparent; border-radius: 6px; background: transparent; cursor: pointer; width: 100%; padding: 3px 6px; }
+    .team-name-input:hover { border-color: rgba(0,0,0,0.15); background: rgba(255,255,255,0.25); }
+    .team-name-input:focus { border-color: rgba(0,0,0,0.3); background: rgba(255,255,255,0.35); outline: none; }
+    .nav-bar { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 0.5px solid #e0e0d8; display: flex; z-index: 999; }
+    .nav-btn { flex: 1; padding: 10px 4px 8px; background: none; border: none; cursor: pointer; color: #999; font-size: 11px; display: flex; flex-direction: column; align-items: center; gap: 3px; transition: color 0.15s; }
+    .nav-btn.active { color: #1D9E75; }
+    .nav-btn svg { width: 20px; height: 20px; }
+    .badge { display: inline-block; font-size: 12px; font-weight: 500; padding: 3px 10px; border-radius: 20px; }
+    .row { display: flex; gap: 8px; align-items: center; }
+    .muted { color: #888; font-size: 13px; }
+    @media (max-width: 480px) {
+      .screen { padding: 1rem; }
+      .star { font-size: 32px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ADMIN SETUP -->
+<div id="screen-setup" class="screen active">
+  <p class="section-title">Admin</p>
+  <h1>Teilnehmer einrichten</h1>
+  <div class="card">
+    <label class="muted">Anzahl der Zimmer:</label>
+    <div class="row" style="margin-top:8px;">
+      <input type="number" id="bulk-count" placeholder="z.B. 12" min="2" max="60" style="flex:1;"/>
+      <button class="btn btn-primary" onclick="bulkAdd()">Zimmer anlegen</button>
+    </div>
+  </div>
+  <div id="participant-list"></div>
+  <div class="row" style="margin-top:12px;flex-wrap:wrap;">
+    <button class="btn btn-primary" id="start-btn" onclick="startEvent()" disabled>Bewertungsrunde starten</button>
+    <button class="btn btn-danger" onclick="clearAll()">Alle löschen</button>
+    <span class="muted" id="count-label"></span>
+  </div>
+</div>
+
+<!-- BEAMER -->
+<div id="screen-beamer" class="screen">
+  <p class="section-title">Beamer-Ansicht</p>
+  <div id="beamer-waiting">
+    <div style="text-align:center;padding:1rem 0;">
+      <div style="font-size:60px;margin-bottom:8px;">⚽</div>
+      <h1 id="beamer-name" style="font-size:30px;margin-bottom:6px;">–</h1>
+      <p class="muted" style="margin-bottom:1.5rem;font-size:16px;">Bitte jetzt vorne erscheinen.</p>
+      <div style="background:#f5f5f3;border-radius:12px;padding:1.5rem;display:inline-block;margin-bottom:1.5rem;">
+        <p class="muted" style="margin-bottom:10px;">QR-Code zum Bewerten scannen:</p>
+        <div id="qr-container" style="display:flex;justify-content:center;"></div>
+        <p style="font-size:11px;color:#aaa;margin-top:8px;word-break:break-all;" id="qr-url-label"></p>
+      </div>
+      <div style="max-width:300px;margin:0 auto;">
+        <div class="progress-bar"><div class="progress-fill" id="vote-progress" style="width:0%"></div></div>
+        <p class="muted" id="vote-count-label">0 von 0 Bewertungen</p>
+      </div>
+      <div id="beamer-check" style="display:none;margin-top:1.5rem;">
+        <div class="check-circle">✓</div>
+        <p style="color:#1D9E75;font-weight:500;font-size:16px;margin-bottom:12px;">Alle haben bewertet!</p>
+        <button class="btn btn-primary" onclick="nextParticipant()">Weiter →</button>
+      </div>
+      <div id="beamer-skip" style="margin-top:1rem;">
+        <button class="btn" onclick="nextParticipant()">Überspringen →</button>
+      </div>
+    </div>
+  </div>
+  <div id="beamer-done" style="display:none;text-align:center;padding:2rem 0;">
+    <div class="check-circle" style="width:64px;height:64px;font-size:30px;">✓</div>
+    <h2 style="margin-bottom:8px;">Alle bewertet!</h2>
+    <p class="muted" style="margin-bottom:1.5rem;">Jetzt werden die fairsten Teams berechnet.</p>
+    <button class="btn btn-primary" onclick="calculateTeams()">Teams berechnen & anzeigen</button>
+  </div>
+</div>
+
+<!-- HANDY / ABSTIMMUNG -->
+<div id="screen-vote" class="screen">
+  <p class="section-title" style="text-align:center;">Anonyme Bewertung</p>
+  <div id="already-voted" style="display:none;text-align:center;padding:3rem 0;">
+    <div class="check-circle">✓</div>
+    <h2 style="margin-bottom:8px;">Danke!</h2>
+    <p class="muted">Warte auf das nächste Zimmer.</p>
+  </div>
+  <div id="vote-form">
+    <div class="card" style="text-align:center;">
+      <p class="muted" style="margin-bottom:4px;">Jetzt wird bewertet:</p>
+      <h2 id="vote-target-name" style="font-size:22px;">–</h2>
+    </div>
+    <div class="card" style="text-align:center;">
+      <p class="muted">Fußball-Können</p>
+      <div style="display:flex;gap:6px;justify-content:center;margin:14px 0;">
+        <span class="star" onclick="setStar(1)">⭐</span>
+        <span class="star" onclick="setStar(2)">⭐</span>
+        <span class="star" onclick="setStar(3)">⭐</span>
+        <span class="star" onclick="setStar(4)">⭐</span>
+        <span class="star" onclick="setStar(5)">⭐</span>
+      </div>
+      <p class="muted" id="star-label" style="min-height:18px;">Bitte wählen</p>
+    </div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;padding:14px;" onclick="submitVote()">Bewertung abgeben</button>
+    <p style="font-size:12px;color:#aaa;text-align:center;margin-top:10px;">Deine Bewertung ist anonym. Niemand sieht sie.</p>
+  </div>
+</div>
+
+<!-- ERGEBNIS -->
+<div id="screen-results" class="screen">
+  <p class="section-title">Ergebnis</p>
+  <h1>Teamaufteilung</h1>
+  <p class="muted" style="margin-bottom:1.5rem;">Tippe auf einen Teamnamen zum Bearbeiten.</p>
+  <div id="teams-container"></div>
+  <div class="row" style="margin-top:1.5rem;padding-top:1rem;border-top:0.5px solid #e0e0d8;flex-wrap:wrap;">
+    <button class="btn btn-primary" onclick="resetAll()">Neu starten</button>
+    <button class="btn" onclick="showScreen('screen-beamer')">Zurück zum Beamer</button>
+  </div>
+</div>
+
+<!-- NAVIGATION -->
+<nav class="nav-bar">
+  <button class="nav-btn active" id="nav-setup" onclick="showScreen('screen-setup')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.22 4.22l2.12 2.12M17.66 17.66l2.12 2.12M2 12h3M19 12h3M4.22 19.78l2.12-2.12M17.66 6.34l2.12-2.12"/></svg>
+    Admin
+  </button>
+  <button class="nav-btn" id="nav-beamer" onclick="showScreen('screen-beamer')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M12 18v3M8 21h8"/></svg>
+    Beamer
+  </button>
+  <button class="nav-btn" id="nav-vote" onclick="showScreen('screen-vote');syncVoteScreen()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+    Handy
+  </button>
+  <button class="nav-btn" id="nav-results" onclick="showScreen('screen-results')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    Teams
+  </button>
+</nav>
+
+<script>
+  // ── Storage Keys ──────────────────────────────────────────────
+  const SKEY = 'turnier_state_v6';
+  const VKEY = 'turnier_votes_v6';
+  const TKEY = 'turnier_teamnames_v6';
+
+  // ── State ─────────────────────────────────────────────────────
+  let state = { participants: [], currentIndex: -1, phase: 'setup' };
+  let votes = {};
+  let teamNames = {};
+
+  const TEAM_COLORS = [
+    { bg: '#E1F5EE', border: '#0F6E56', text: '#085041' },
+    { bg: '#E6F1FB', border: '#185FA5', text: '#0C447C' },
+    { bg: '#FAEEDA', border: '#BA7517', text: '#633806' },
+    { bg: '#FBEAF0', border: '#993556', text: '#72243E' },
+    { bg: '#EEEDFE', border: '#534AB7', text: '#3C3489' },
+    { bg: '#EAF3DE', border: '#3B6D11', text: '#27500A' },
+    { bg: '#FCEBEB', border: '#A32D2D', text: '#791F1F' },
+  ];
+
+  // ── Persistence (localStorage als shared-ähnlicher Speicher) ──
+  // Für echtes Multi-Gerät-Sharing: ersetze die folgenden Funktionen
+  // mit einem einfachen Backend (z.B. Firebase Realtime DB).
+  function saveState() {
+    localStorage.setItem(SKEY, JSON.stringify(state));
+    localStorage.setItem(VKEY, JSON.stringify(votes));
+    localStorage.setItem(TKEY, JSON.stringify(teamNames));
+  }
+
+  function loadState() {
+    try { const s = localStorage.getItem(SKEY); if (s) state = JSON.parse(s); } catch(e) {}
+    try { const v = localStorage.getItem(VKEY); if (v) votes = JSON.parse(v); } catch(e) {}
+    try { const t = localStorage.getItem(TKEY); if (t) teamNames = JSON.parse(t); } catch(e) {}
+  }
+
+  // ── Navigation ────────────────────────────────────────────────
+  function showScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    const map = { 'screen-setup':'nav-setup','screen-beamer':'nav-beamer','screen-vote':'nav-vote','screen-results':'nav-results' };
+    if (map[id]) document.getElementById(map[id]).classList.add('active');
+  }
+
+  // ── Setup ─────────────────────────────────────────────────────
+  function bulkAdd() {
+    const n = parseInt(document.getElementById('bulk-count').value);
+    if (!n || n < 2) { alert('Bitte mindestens 2 eingeben.'); return; }
+    state.participants = Array.from({ length: n }, (_, i) => ({ id: 'z'+(i+1), name: 'Zimmer '+(i+1) }));
+    saveState(); renderSetup();
+  }
+
+  function removeParticipant(id) {
+    state.participants = state.participants.filter(p => p.id !== id);
+    saveState(); renderSetup();
+  }
+
+  function clearAll() {
+    if (!confirm('Alle Teilnehmer und Bewertungen löschen?')) return;
+    state = { participants: [], currentIndex: -1, phase: 'setup' };
+    votes = {}; teamNames = {};
+    saveState(); renderSetup();
+  }
+
+  function renderSetup() {
+    const n = state.participants.length;
+    const teams = Math.ceil(n / 4);
+    document.getElementById('count-label').textContent = n > 0 ? n + ' Zimmer · ' + teams + ' Teams à 4' : '';
+    document.getElementById('start-btn').disabled = n < 2;
+    document.getElementById('participant-list').innerHTML = state.participants.map((p, i) => `
+      <div class="card" style="display:flex;align-items:center;gap:10px;padding:8px 14px;">
+        <span class="muted" style="min-width:24px;">${i+1}.</span>
+        <span style="flex:1;font-size:14px;">${p.name}</span>
+        <button onclick="removeParticipant('${p.id}')" style="background:none;border:none;cursor:pointer;color:#aaa;font-size:20px;line-height:1;">×</button>
+      </div>
+    `).join('');
+  }
+
+  // ── Event Start ───────────────────────────────────────────────
+  function startEvent() {
+    state.phase = 'voting';
+    state.currentIndex = 0;
+    votes = {};
+    saveState();
+    showScreen('screen-beamer');
+    renderBeamer();
+  }
+
+  // ── Beamer ────────────────────────────────────────────────────
+  let _pollTimer = null;
+
+  function renderBeamer() {
+    const p = state.participants[state.currentIndex];
+    if (!p) { showDoneScreen(); return; }
+    document.getElementById('beamer-waiting').style.display = 'block';
+    document.getElementById('beamer-done').style.display = 'none';
+    document.getElementById('beamer-name').textContent = p.name;
+    document.getElementById('beamer-check').style.display = 'none';
+    document.getElementById('beamer-skip').style.display = 'block';
+    updateProgress();
+    renderQR();
+    clearInterval(_pollTimer);
+    _pollTimer = setInterval(pollVotes, 2500);
+  }
+
+  function renderQR() {
+    const container = document.getElementById('qr-container');
+    container.innerHTML = '<div id="qr-inner"></div>';
+    const url = location.href.split('?')[0];
+    document.getElementById('qr-url-label').textContent = url;
+    try {
+      new QRCode(document.getElementById('qr-inner'), { text: url, width: 180, height: 180, correctLevel: QRCode.CorrectLevel.M });
+    } catch(e) {}
+  }
+
+  function updateProgress() {
+    const p = state.participants[state.currentIndex];
+    if (!p) return;
+    const given = (votes[p.id] || []).length;
+    const total = state.participants.length - 1;
+    const pct = total > 0 ? Math.round((given / total) * 100) : 0;
+    document.getElementById('vote-progress').style.width = pct + '%';
+    document.getElementById('vote-count-label').textContent = given + ' von ' + total + ' Bewertungen abgegeben';
+    if (given >= total && total > 0) {
+      document.getElementById('beamer-check').style.display = 'block';
+      document.getElementById('beamer-skip').style.display = 'none';
+    }
+  }
+
+  function pollVotes() {
+    try {
+      const v = localStorage.getItem(VKEY);
+      if (v) { votes = JSON.parse(v); updateProgress(); }
+    } catch(e) {}
+  }
+
+  function nextParticipant() {
+    state.currentIndex++;
+    if (state.currentIndex >= state.participants.length) { showDoneScreen(); return; }
+    saveState();
+    renderBeamer();
+  }
+
+  function showDoneScreen() {
+    clearInterval(_pollTimer); _pollTimer = null;
+    state.phase = 'done'; saveState();
+    document.getElementById('beamer-waiting').style.display = 'none';
+    document.getElementById('beamer-done').style.display = 'block';
+  }
+
+  // ── Abstimmung (Handy) ────────────────────────────────────────
+  let selectedStar = 0;
+  const starLabels = ['', 'Anfänger', 'Einsteiger', 'Mittelmäßig', 'Gut', 'Sehr gut'];
+  let _votePoller = null;
+
+  function setStar(n) {
+    selectedStar = n;
+    document.getElementById('star-label').textContent = starLabels[n] + ' (' + n + '/5)';
+    document.querySelectorAll('.star').forEach((s, i) => s.classList.toggle('on', i < n));
+  }
+
+  function syncVoteScreen() {
+    loadState();
+    const p = state.participants[state.currentIndex];
+    const vf = document.getElementById('vote-form');
+    const av = document.getElementById('already-voted');
+    if (!p || state.phase !== 'voting') {
+      av.style.display = 'none';
+      vf.innerHTML = '<p style="text-align:center;color:#888;padding:3rem 0;font-size:15px;">Noch keine aktive Runde.<br>Warte auf den Moderator.</p>';
+      vf.style.display = 'block';
+      return;
+    }
+    document.getElementById('vote-target-name').textContent = p.name;
+    const hasVoted = localStorage.getItem('voted_' + p.id) === '1';
+    av.style.display = hasVoted ? 'block' : 'none';
+    vf.style.display = hasVoted ? 'none' : 'block';
+    selectedStar = 0; setStar(0);
+    clearInterval(_votePoller);
+    _votePoller = setInterval(syncVoteScreen, 3000);
+  }
+
+  function submitVote() {
+    if (!selectedStar) { alert('Bitte wähle eine Bewertung (1–5 Sterne).'); return; }
+    loadState();
+    const p = state.participants[state.currentIndex];
+    if (!p) return;
+    if (localStorage.getItem('voted_' + p.id) === '1') { syncVoteScreen(); return; }
+    let vid = localStorage.getItem('my_voter_id');
+    if (!vid) { vid = Math.random().toString(36).slice(2, 9); localStorage.setItem('my_voter_id', vid); }
+    if (!votes[p.id]) votes[p.id] = [];
+    votes[p.id].push({ voter: vid, rating: selectedStar });
+    localStorage.setItem(VKEY, JSON.stringify(votes));
+    localStorage.setItem('voted_' + p.id, '1');
+    document.getElementById('already-voted').style.display = 'block';
+    document.getElementById('vote-form').style.display = 'none';
+  }
+
+  // ── Teamberechnung ────────────────────────────────────────────
+  function calculateTeams() {
+    const scored = state.participants.map(p => {
+      const vs = votes[p.id] || [];
+      const avg = vs.length ? vs.reduce((a, v) => a + v.rating, 0) / vs.length : 2.5;
+      return { ...p, avg };
+    });
+    scored.sort((a, b) => b.avg - a.avg);
+    const numTeams = Math.ceil(scored.length / 4);
+    const teams = Array.from({ length: numTeams }, (_, i) => ({ id: 't'+i, defaultName: 'Team '+(i+1), members: [], total: 0 }));
+    scored.forEach((p, i) => {
+      const row = Math.floor(i / numTeams);
+      const col = row % 2 === 0 ? i % numTeams : numTeams - 1 - (i % numTeams);
+      const idx = Math.min(col, teams.length - 1);
+      teams[idx].members.push(p);
+      teams[idx].total += p.avg;
+    });
+    const container = document.getElementById('teams-container');
+    container.innerHTML = teams.map((t, i) => {
+      const c = TEAM_COLORS[i % TEAM_COLORS.length];
+      const name = teamNames[t.id] || t.defaultName;
+      const avg = t.members.length ? (t.total / t.members.length).toFixed(1) : '–';
+      return `
+        <div style="background:${c.bg};border:0.5px solid ${c.border}66;border-radius:12px;padding:1rem 1.25rem;margin-bottom:12px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;">
+            <input class="team-name-input" value="${name}" style="color:${c.text};"
+              onchange="teamNames['${t.id}']=this.value||'${t.defaultName}';localStorage.setItem('${TKEY}',JSON.stringify(teamNames))"
+              title="Tippen zum Bearbeiten"/>
+            <span style="font-size:12px;font-weight:500;color:${c.text};background:rgba(0,0,0,0.08);padding:3px 10px;border-radius:20px;white-space:nowrap;">Ø ${avg} ⭐</span>
+          </div>
+          ${t.members.map(m => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-top:0.5px solid ${c.border}25;">
+              <span style="font-size:14px;color:${c.text};">${m.name}</span>
+              <span style="font-size:12px;color:${c.text};opacity:0.6;">${m.avg.toFixed(1)} ⭐</span>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }).join('');
+    showScreen('screen-results');
+  }
+
+  // ── Reset ─────────────────────────────────────────────────────
+  function resetAll() {
+    if (!confirm('Alles zurücksetzen und neu starten?')) return;
+    state = { participants: [], currentIndex: -1, phase: 'setup' };
+    votes = {}; teamNames = {};
+    saveState(); renderSetup();
+    showScreen('screen-setup');
+  }
+
+  // ── Init ──────────────────────────────────────────────────────
+  loadState();
+  renderSetup();
+  if (state.phase === 'voting') { showScreen('screen-beamer'); renderBeamer(); }
+  else if (state.phase === 'done') { showScreen('screen-beamer'); showDoneScreen(); }
+</script>
+</body>
+</html>
